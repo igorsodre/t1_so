@@ -25,8 +25,9 @@ using namespace std;
 #define MSG_SIZE 100
 
 typedef struct t_mensagem {
-	int interval;
+	long nothing;
 	int copies;
+	long interval;
 	char content[MSG_SIZE];
 } Msg;
 
@@ -35,14 +36,33 @@ class Config {
 		int id_fila = -1;
 		Config(){};
 		void initialize_config(){
-
+			if(id_fila < 0) start_queue();
 		}
 
-		void get_queue(){
+		void start_queue(){
 			this->id_fila = msgget(MESG_QUEUE_NAME, IPC_CREAT|0666);
+		}
+
+		void destroy_queue(){
+			msgctl(id_fila, IPC_RMID, NULL);
+		}
+
+		int get_queue(){
+			return this->id_fila;
+		}
+
+		void push_msg(Msg msg){
+			msgsnd(id_fila, &msg, sizeof(Msg)-sizeof(long), 0);
+		}
+		int pop_msg(Msg *msg){
+			if(msgrcv(id_fila, msg, sizeof(Msg)-sizeof(long), 0, 0) != -1) return 1;
+			else return 0;
 		}
 };
 
+void display_msg(Msg *msg){
+	cout << "intervalo: " << msg->interval << ", copias: " << msg->copies << ", mensagem: " << string(msg->content) << endl;
+}
 
 bool in_array(const std::string &value, const std::vector<string> &array)
 {

@@ -9,7 +9,7 @@ escalonador: escalonador.cpp
 	g++ -std=c++11 escalonador.cpp -o escalonador
 
 exec:
-	./solicita_execucao 00:0fa 3 hello_world
+	./solicita_execucao 00:10 3 hello_world
 
 remove:
 	rm solicita_execucao escalonador
