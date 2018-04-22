@@ -5,6 +5,7 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sys/wait.h>
+#include <sys/shm.h>
 #include <unistd.h>
 
 using namespace std;
@@ -22,8 +23,13 @@ using namespace std;
 #define RESET "\x1B[0m"
 
 #define MESG_QUEUE_NAME 130114553
+#define SHARED_MEMORY_KEY 130114
 #define MSG_SIZE 100
+#define SUCCESS -42
+#define UP_QUEUE 1
+#define DOWN_QUEUE 2
 
+/* estrutura utilizada para tranmissao das mensagens do solicitador para o executor*/
 typedef struct t_mensagem {
 	long nothing;
 	int copies;
@@ -31,44 +37,117 @@ typedef struct t_mensagem {
 	char content[MSG_SIZE];
 } Msg;
 
+/**
+ * abstracao dos processos a serem escalonados,
+ * com arquivo de execucao, prioridade atual e flag que diz se a prioridade
+ * vai aumentar ou diminiur apos a proxima execucao
+ * */
+class TProcess {
+	public:
+		int id;
+		string exec_file;
+		int priotity;
+		short current_action;
+};
+
+/**
+ * ambiente de execucao, com as 3 filas de prioridades round robin e variaveis de controle
+ * */
+class TEnvironment {
+	public:
+		int flag_teste = 0;
+		queue<TProcess> p1_queue;
+		queue<TProcess> p2_queue;
+		queue<TProcess> p3_queue;
+};
+
+/**
+ * estrutura de controle programas,
+ * utilizada para unificar valores utilizados por todos os processos
+ * */
 class Config {
 	public:
 		int id_fila = -1;
-		Config(){};
-		void initialize_config(){
+		int pid_runner;
+		int mem_id;
+		struct shmid_ds buf; //utilizada pra remover a shared memory
+		TEnvironment *t_env;
+
+		Config(){}; //constructor
+
+		void initialize_config(){ //inicializa configuracoes iniciais
+			srand(time(NULL));
+			ios::sync_with_stdio(false);
 			if(id_fila < 0) start_queue();
 		}
 
-		void start_queue(){
+		void get_shared_memory(){ // aloca um segmento de memoria compartilhada
+			mem_id = shmget(SHARED_MEMORY_KEY, sizeof(TEnvironment), IPC_CREAT|0666);
+		}
+
+		void attach_memmory(){ // fixa o segmento de memoria compartilhada
+			t_env = (TEnvironment *) shmat(mem_id, (char *)0, 0);
+		}
+
+		void detatch_memory(){ // desfixa o segmento de memoria compartilhada
+			shmdt((void*)t_env);
+		}
+
+		void remove_shared_memory(){ // libera o segmento de memoria compartilhada alocado anteriormente
+			shmctl(mem_id, IPC_RMID, NULL);
+		}
+
+		void start_queue(){ // cria uma fila de mensagem
 			this->id_fila = msgget(MESG_QUEUE_NAME, IPC_CREAT|0666);
 		}
 
-		void destroy_queue(){
+		void destroy_queue(){ // libera a fila de mensagens
 			msgctl(id_fila, IPC_RMID, NULL);
 		}
 
-		int get_queue(){
+		int get_queue(){ // retorna o id da fila de mensagens
 			return this->id_fila;
 		}
 
-		void push_msg(Msg msg){
+		void push_msg(Msg msg){ // insere uma mensagem na fila de mensagens
 			msgsnd(id_fila, &msg, sizeof(Msg)-sizeof(long), 0);
 		}
-		int pop_msg(Msg *msg){
+
+		int pop_msg(Msg *msg){ // busca uma mensagm na fila
 			if(msgrcv(id_fila, msg, sizeof(Msg)-sizeof(long), 0, 0) != -1) return 1;
-			else return 0;
+			else return errno;
+		}
+
+		void f_teste(int display){ // nome autoexplicativo, qualquer codigo para procedimento de teste eh colocado aqui
+			int vezes = 1;
+			if(display == 1){
+				while(vezes--){
+					int num = rand() % 500;
+					cout << GRN << "\natual: " << t_env->flag_teste << ", rand: " << num << RESET << endl;
+					t_env->flag_teste = num;
+				}
+			}else{
+				while(vezes--){
+					int num = rand();
+					cout << BLU << "\natual: " << t_env->flag_teste << ", rand: " << num << RESET << endl;
+					t_env->flag_teste = num;
+				}
+			}
 		}
 };
 
+// mostra o conteudo da estrutura de mensagens
 void display_msg(Msg *msg){
 	cout << "intervalo: " << msg->interval << ", copias: " << msg->copies << ", mensagem: " << string(msg->content) << endl;
 }
 
+// verifica se o valor passado esta contido no vetor passado
 bool in_array(const std::string &value, const std::vector<string> &array)
 {
 	return std::find(array.begin(), array.end(), value) != array.end();
 }
 
+// Retira os espacoes em branco de strings
 std::string trim(const std::string& str,
 		const std::string& whitespace = " \t")
 {
@@ -106,9 +185,9 @@ std::string reduce(const std::string& str,
 
 string join(const vector<string>& vec, const char* delim)
 {
-    stringstream res;
-    copy(vec.begin(), vec.end(), ostream_iterator<string>(res, delim));
-    return res.str();
+	stringstream res;
+	copy(vec.begin(), vec.end(), ostream_iterator<string>(res, delim));
+	return res.str();
 }
 
 /*******************************************************************************
@@ -135,26 +214,6 @@ void split(const string &s, const char* delim, vector<string> & v){
  * *************************************************************************/
 void to_uppercase(string &str){
 	std::transform(str.begin(), str.end(),str.begin(), ::toupper);
-}
-
-/*******************************************************************************
- * verifica se string eh um numero exadecimal
- * *****************************************************************************/
-bool is_hex_string(std::string& s) {
-	string str = s;
-	to_uppercase(str);
-	if(s[0] == '-')
-		str = s.substr(1,s.length());
-	vector<string> v;
-	const char *c = "X";
-	split(str, c, v);
-	if(v.size() > 2 || v[0] != "0") return 0;
-
-	for(auto &x:v[1]) {
-		if(!isxdigit(x)) return 0;
-	}
-
-	return 1;
 }
 
 /*******************************************************************************

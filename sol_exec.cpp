@@ -2,7 +2,7 @@
 using namespace std;
 
 /* 1) */
-int validate_arguments(int argc, char *argv[]);
+int validate_arguments(int argc, char *argv[], Config &config);
 /* 2) */
 void schedule_process(Config &config, char *argv[]);
 /* 3) */
@@ -13,18 +13,22 @@ int get_interval(string str);
 
 int main(int argc, char *argv[])
 {
-	if(!validate_arguments(argc, argv)) return 0;
 	Config config;
 	config.initialize_config();
-	/* config.destroy_queue(); */
+	if(!validate_arguments(argc, argv, config)) return 0;
 	schedule_process(config, argv);
 	return 0;
 }
 
 /**
- * 1) verifies if the arguments are valid. If not, it terminates the execution
+ * 1) verifica se os argumentos sao validados
  */
-int validate_arguments(int argc, char *argv[]){
+int validate_arguments(int argc, char *argv[], Config &config){
+	/* destroy a fila de mensagens */
+	if(argc == 2 && string(argv[1]) == "-d"){
+		config.destroy_queue();
+		return 0;
+	}
 	if(argc != 4){
 		cout << "Numero incorreto de argumentos\n";
 		return 0;
@@ -49,7 +53,6 @@ int validate_arguments(int argc, char *argv[]){
  * */
 void schedule_process(Config &config, char *argv[]){
 	Msg msg = build_message(argv);
-	display_msg(msg);
 	config.push_msg(msg);
 }
 
