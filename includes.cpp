@@ -6,7 +6,9 @@
 #include <sys/msg.h>
 #include <sys/wait.h>
 #include <sys/shm.h>
+#include <signal.h>
 #include <unistd.h>
+#include <time.h>
 
 using namespace std;
 
@@ -30,10 +32,12 @@ using namespace std;
 #define DOWN_QUEUE 2
 
 /* estrutura utilizada para tranmissao das mensagens do solicitador para o executor*/
+typedef struct tm t_time;
 typedef struct t_mensagem {
 	long nothing;
 	int copies;
-	long interval;
+	t_time horario;
+	int priority;
 	char content[MSG_SIZE];
 } Msg;
 
@@ -48,6 +52,13 @@ class TProcess {
 		string exec_file;
 		int priotity;
 		short current_action;
+		t_time when;
+
+		bool operator<(TProcess &b){
+			time_t now;
+			time(&now);
+			return difftime(now, mktime(&when)) < difftime(now, mktime(&b.when));
+		}
 };
 
 /**
@@ -55,7 +66,7 @@ class TProcess {
  * */
 class TEnvironment {
 	public:
-		int flag_teste = 0;
+		int pid_seq = 1;
 		queue<TProcess> p1_queue;
 		queue<TProcess> p2_queue;
 		queue<TProcess> p3_queue;
@@ -63,20 +74,18 @@ class TEnvironment {
 
 /**
  * estrutura de controle programas,
- * utilizada para unificar valores utilizados por todos os processos
+ * utilizada para unificar valores e procedimentos utilizados por todos os processos
  * */
 class Config {
 	public:
 		int id_fila = -1;
 		int pid_runner;
-		int mem_id;
-		struct shmid_ds buf; //utilizada pra remover a shared memory
+		int mem_id; // indentificador da memoria compartilahda
 		TEnvironment *t_env;
-
+		priority_queue<TProcess> p_fila; //fila de espera de processos ordenada por hora de execucao mais proxima
 		Config(){}; //constructor
 
 		void initialize_config(){ //inicializa configuracoes iniciais
-			srand(time(NULL));
 			ios::sync_with_stdio(false);
 			if(id_fila < 0) start_queue();
 		}
@@ -114,31 +123,18 @@ class Config {
 		}
 
 		int pop_msg(Msg *msg){ // busca uma mensagm na fila
-			if(msgrcv(id_fila, msg, sizeof(Msg)-sizeof(long), 0, 0) != -1) return 1;
-			else return errno;
+			if(msgrcv(id_fila, msg, sizeof(Msg)-sizeof(long), 0, 0) < 0) return errno;
+			else return SUCCESS;
 		}
 
-		void f_teste(int display){ // nome autoexplicativo, qualquer codigo para procedimento de teste eh colocado aqui
-			int vezes = 1;
-			if(display == 1){
-				while(vezes--){
-					int num = rand() % 500;
-					cout << GRN << "\natual: " << t_env->flag_teste << ", rand: " << num << RESET << endl;
-					t_env->flag_teste = num;
-				}
-			}else{
-				while(vezes--){
-					int num = rand();
-					cout << BLU << "\natual: " << t_env->flag_teste << ", rand: " << num << RESET << endl;
-					t_env->flag_teste = num;
-				}
-			}
-		}
+		/* void f_teste(int display){ // nome autoexplicativo, qualquer codigo para procedimento de teste eh colocado aqui */
+		/* } */
 };
 
 // mostra o conteudo da estrutura de mensagens
 void display_msg(Msg *msg){
-	cout << "intervalo: " << msg->interval << ", copias: " << msg->copies << ", mensagem: " << string(msg->content) << endl;
+	cout << "horario de execucao: " << msg->horario.tm_hour << " horas, " << msg->horario.tm_min << " minutos, " << msg->horario.tm_sec << " segundos" << endl;
+	cout << "copias: " << msg->copies << ", arquivo a executar: " << string(msg->content) << ", prioridade: " <<msg->priority << endl;
 }
 
 // verifica se o valor passado esta contido no vetor passado
