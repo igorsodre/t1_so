@@ -14,7 +14,7 @@ t_time get_interval(string str);
 int main(int argc, char *argv[])
 {
 	Config config;
-	config.initialize_config();
+	if(!config.initialize_config()) return 0;
 	if(!validate_arguments(argc, argv, config)) return 0;
 	schedule_process(config, argv);
 
