@@ -29,7 +29,7 @@ using namespace std;
 #define SHARED_MEMORY_KEY 130114
 #define SEMAPHORE_KEY 1301145
 #define MSG_SIZE 100
-#define MAX_SIZE_QUEUE 20
+#define MAX_SIZE_QUEUE 21
 #define SUCCESS -42
 #define UP_QUEUE 1
 #define DOWN_QUEUE 2
@@ -132,7 +132,9 @@ class TProcess {
 		int priority;
 		short current_action;
 		t_time when;
-
+		t_time start;
+		t_time end;
+		t_time submit;
 };
 /* definindo o operador < (menor que) para utiilizacao da fila de prioridade */
 bool operator<(TProcess a, TProcess b){
@@ -330,7 +332,6 @@ bool is_number(const std::string& s)
 	return !str.empty() && std::find_if(str.begin(),
 			str.end(), [](char c) { return !std::isdigit(c); }) == str.end();
 }
-
 
 /**
  * 0) obtem o semaforo, caso falha avisa na tela

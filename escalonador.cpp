@@ -68,7 +68,6 @@ void run_scheduler(Config &config){
 			alarm(delay);
 		}
 	}
-	cout << "Sai do loop run scheduler" << endl;
 }
 
 /**
@@ -139,28 +138,20 @@ void initialize_processes(Config &config){
 		TProcess proc = config.p_fila.top();
 		P(sem);
 		display_proc(proc);
-		cout << "entrei no switch" << endl;
 		switch(proc.priority){
 			case 1:
-				cout << "entrei no case 1" << endl;
 				config.t_env->p1_queue.insert(proc);
 				config.p_fila.pop();
-				cout << "sai do case 1" << endl;
 				break;
 			case 2:
-				cout << "entrei no case 2" << endl;
 				config.t_env->p2_queue.insert(proc);
 				config.p_fila.pop();
-				cout << "sai do case 2" << endl;
 				break;
 			case 3:
-				cout << "entrei no case 3" << endl;
 				config.t_env->p3_queue.insert(proc);
 				config.p_fila.pop();
-				cout << "sai do case 3" << endl;
 				break;
 		}
-		cout << "sai no switch" << endl;
 		V(sem);
 	}
 }
