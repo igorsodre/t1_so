@@ -11,8 +11,6 @@
 #include <sys/sem.h>
 #include <time.h>
 
-using namespace std;
-
 #ifndef INCLUDES_HPP
 #define INCLUDES_HPP
 
@@ -37,7 +35,7 @@ using namespace std;
 #define NOOP 0
 
 /***************************************************************************************
- **************************** Implementacao de uma fila de tamanho estatico  ************
+ **************************** Implementacao de uma fila circular de tamanho estatico  ************
  ***************************************************************************************/
 /* fonte: https://www.sanfoundry.com/cpp-program-implement-circular-queue/ */
 template<typename T>
@@ -164,18 +162,18 @@ class Config {
 		int pid_runner;
 		int mem_id; // indentificador da memoria compartilahda
 		TEnvironment *t_env;
-		priority_queue<TProcess> p_fila; //fila de espera de processos ordenada por hora de execucao mais proxima
+		std::priority_queue<TProcess> p_fila; //fila de espera de processos ordenada por hora de execucao mais proxima
 		Config(){}; //constructor
 
 		int initialize_config(){ //inicializa configuracoes iniciais
-			ios::sync_with_stdio(false);
+			std::ios::sync_with_stdio(false);
 			if(id_fila < 0) return start_queue();
 			else return 1;
 		}
 
 		int get_shared_memory(){ // aloca um segmento de memoria compartilhada
 			if( (mem_id = shmget(SHARED_MEMORY_KEY, sizeof(TEnvironment), IPC_CREAT|0666)) == -1) {
-				cout << RED << "Falha ao alocar memoria compartilhada" << RESET << endl;
+				std::cout << RED << "Falha ao alocar memoria compartilhada" << RESET << std::endl;
 				return errno;
 			}
 			else return SUCCESS;
@@ -201,7 +199,7 @@ class Config {
 		int start_queue(){ // cria uma fila de mensagem
 			this->id_fila = msgget(MESG_QUEUE_KEY, IPC_CREAT|0666);
 			if(id_fila < 0) {
-				cout << RED << "Falha ao criar fila de mensagem" << RESET << endl;
+				std::cout << RED << "Falha ao criar fila de mensagem" << RESET << std::endl;
 				return 0;
 			}
 			return 1;
@@ -220,13 +218,13 @@ class Config {
 		}
 
 		int pop_msg(Msg *msg){ // busca uma mensagm na fila
-			cout << BLU << "esperando mensagem..." << RESET << endl;
+			std::cout << BLU << "esperando mensagem..." << RESET << std::endl;
 			if(msgrcv(id_fila, msg, sizeof(Msg)-sizeof(long), 0, 0) < 0) {
-				cout << RED << "Falha na espera de mensagem" << RESET << endl;
+				std::cout << RED << "Falha na espera de mensagem" << RESET << std::endl;
 				return errno;
 			}
 			else {
-				cout << GRN << "Mensagem recebida" << RESET << endl;
+				std::cout << GRN << "Mensagem recebida" << RESET << std::endl;
 				return SUCCESS;
 			}
 		}
@@ -237,16 +235,16 @@ class Config {
 
 // mostra o conteudo da estrutura de mensagens
 void display_msg(Msg *msg){
-	cout << "horario de execucao: " << msg->horario.tm_hour << " horas, " << msg->horario.tm_min << " minutos, " << msg->horario.tm_sec << " segundos" << endl;
-	cout << "copias: " << msg->copies << ", arquivo a executar: " << string(msg->content) << ", prioridade: " <<msg->priority << endl;
+	std::cout << "horario de execucao: " << msg->horario.tm_hour << " horas, " << msg->horario.tm_min << " minutos, " << msg->horario.tm_sec << " segundos" << std::endl;
+	std::cout << "copias: " << msg->copies << ", arquivo a executar: " << std::string(msg->content) << ", prioridade: " <<msg->priority << std::endl;
 }
 
-string my_get_time(t_time *horario){
-	string retorno = to_string(horario->tm_hour) + ":" + to_string(horario->tm_min) + ":" + to_string(horario->tm_sec);
+std::string my_get_time(t_time *horario){
+	std::string retorno = std::to_string(horario->tm_hour) + ":" + std::to_string(horario->tm_min) + ":" + std::to_string(horario->tm_sec);
 	return retorno;
 }
 // verifica se o valor passado esta contido no vetor passado
-bool in_array(const std::string &value, const std::vector<string> &array)
+bool in_array(const std::string &value, const std::vector<std::string> &array)
 {
 	return std::find(array.begin(), array.end(), value) != array.end();
 }
@@ -287,10 +285,10 @@ std::string reduce(const std::string& str,
 	return result;
 }
 
-string join(const vector<string>& vec, const char* delim)
+std::string join(const std::vector<std::string>& vec, const char* delim)
 {
-	stringstream res;
-	copy(vec.begin(), vec.end(), ostream_iterator<string>(res, delim));
+	std::stringstream res;
+	copy(vec.begin(), vec.end(), std::ostream_iterator<std::string>(res, delim));
 	return res.str();
 }
 
@@ -298,14 +296,14 @@ string join(const vector<string>& vec, const char* delim)
  * separa a string em um array de strings com separacao definida pelo
  * delimitador passado como argumento
  * *****************************************************************************/
-void split(const string &s, const char* delim, vector<string> & v){
+void split(const std::string &s, const char* delim, std::vector<std::string> & v){
 	// to avoid modifying original string
 	// first duplicate the original string and return a char pointer then free the memory
 	v.clear();
 	char * dup = strdup(s.c_str());
 	char * token = strtok(dup, delim);
 	while(token != NULL){
-		v.push_back(string(token));
+		v.push_back(std::string(token));
 		// the call is treated as a subsequent calls to strtok:
 		// the function continues from where it left in previous invocation
 		token = strtok(NULL, delim);
@@ -316,7 +314,7 @@ void split(const string &s, const char* delim, vector<string> & v){
 /**************************************************************************
  * passa string para sua uppercase version
  * *************************************************************************/
-void to_uppercase(string &str){
+void to_uppercase(std::string &str){
 	std::transform(str.begin(), str.end(),str.begin(), ::toupper);
 }
 
@@ -325,7 +323,7 @@ void to_uppercase(string &str){
  * *****************************************************************************/
 bool is_number(const std::string& s)
 {
-	string str;
+	std::string str;
 	str = s;
 	if(s[0] == '-')
 		str = s.substr(1, s.length()+1);
@@ -336,7 +334,7 @@ bool is_number(const std::string& s)
 /**
  * 0) obtem o semaforo, caso falha avisa na tela
  * */
-int sem_create(key_t key, int initval)  
+int sem_create(key_t key, int initval)
 {
 	int semid ;
 
@@ -348,7 +346,7 @@ int sem_create(key_t key, int initval)
 
 	semid = semget(ftok("includes.cpp",key),1,IPC_CREAT|IPC_EXCL|0666) ;
 	if (semid == -1) {
-		semid = semget(ftok("includes.cpp",key),1,0666) ; 
+		semid = semget(ftok("includes.cpp",key),1,0666) ;
 		if (semid == -1) {
 			perror("Erro semget()") ;
 			return -1;
@@ -385,7 +383,7 @@ void V(int semid)
 }
 
 /* 0) */
-void sem_delete(int semid) 
+void sem_delete(int semid)
 {
 	if (semctl(semid,0,IPC_RMID,0) == -1)
 		perror("Erro na destruicao do semaforo");
