@@ -29,10 +29,20 @@
 #define MSG_SIZE 100
 #define MAX_SIZE_QUEUE 21
 #define SUCCESS -42
-#define UP_QUEUE 1
-#define DOWN_QUEUE 2
 #define CREATE_ENV 1
 #define NOOP 0
+#define QUANTUM 5
+
+/*estados do processo em relacao as filas que ele ira entrar*/
+#define STATES_SIZE 8
+#define FILA_1_1 0
+#define FILA_1_2 1
+#define FILA_2_1 2
+#define FILA_2_2 3
+#define FILA_3_1 4
+#define FILA_3_2 5
+#define FILA_2_3 6
+#define FILA_2_4 7
 
 /***************************************************************************************
  **************************** Implementacao de uma fila circular de tamanho estatico  ************
@@ -129,6 +139,8 @@ class TProcess {
 		char exec_file[MSG_SIZE];
 		int priority;
 		short current_action;
+		bool active = false;
+		int pid;
 		t_time when;
 		t_time start;
 		t_time end;
@@ -147,9 +159,7 @@ bool operator<(TProcess a, TProcess b){
 class TEnvironment {
 	public:
 		int pid_seq = 1;
-		PQueue<TProcess> p1_queue;
-		PQueue<TProcess> p2_queue;
-		PQueue<TProcess> p3_queue;
+		PQueue<TProcess> pqueue[4]; // quatro filas ao inves de 3 pra nao precisar fazer correcao do indice(ex: proridade 1 na fila 0)
 };
 
 /**
@@ -163,6 +173,7 @@ class Config {
 		int mem_id; // indentificador da memoria compartilahda
 		TEnvironment *t_env;
 		std::priority_queue<TProcess> p_fila; //fila de espera de processos ordenada por hora de execucao mais proxima
+		std::vector<TProcess> finished_processes;
 		Config(){}; //constructor
 
 		int initialize_config(){ //inicializa configuracoes iniciais
@@ -182,9 +193,9 @@ class Config {
 		void attach_memmory(int operation){ // fixa o segmento de memoria compartilhada
 			t_env = (TEnvironment *) shmat(mem_id, (char *)0, 0);
 			if(operation == CREATE_ENV){
-				t_env->p1_queue.start();
-				t_env->p2_queue.start();
-				t_env->p3_queue.start();
+				t_env->pqueue[1].start();
+				t_env->pqueue[2].start();
+				t_env->pqueue[3].start();
 			}
 		}
 
@@ -218,13 +229,10 @@ class Config {
 		}
 
 		int pop_msg(Msg *msg){ // busca uma mensagm na fila
-			std::cout << BLU << "esperando mensagem..." << RESET << std::endl;
 			if(msgrcv(id_fila, msg, sizeof(Msg)-sizeof(long), 0, 0) < 0) {
-				std::cout << RED << "Falha na espera de mensagem" << RESET << std::endl;
 				return errno;
 			}
 			else {
-				std::cout << GRN << "Mensagem recebida" << RESET << std::endl;
 				return SUCCESS;
 			}
 		}
@@ -243,53 +251,11 @@ std::string my_get_time(t_time *horario){
 	std::string retorno = std::to_string(horario->tm_hour) + ":" + std::to_string(horario->tm_min) + ":" + std::to_string(horario->tm_sec);
 	return retorno;
 }
+
 // verifica se o valor passado esta contido no vetor passado
 bool in_array(const std::string &value, const std::vector<std::string> &array)
 {
 	return std::find(array.begin(), array.end(), value) != array.end();
-}
-
-// Retira os espacoes em branco de strings
-std::string trim(const std::string& str,
-		const std::string& whitespace = " \t")
-{
-	const auto strBegin = str.find_first_not_of(whitespace);
-	if (strBegin == std::string::npos)
-		return ""; // no content
-
-	const auto strEnd = str.find_last_not_of(whitespace);
-	const auto strRange = strEnd - strBegin + 1;
-
-	return str.substr(strBegin, strRange);
-}
-
-std::string reduce(const std::string& str,
-		const std::string& fill = " ",
-		const std::string& whitespace = " \t")
-{
-	// trim first
-	auto result = trim(str, whitespace);
-
-	// replace sub ranges
-	auto beginSpace = result.find_first_of(whitespace);
-	while (beginSpace != std::string::npos)
-	{
-		const auto endSpace = result.find_first_not_of(whitespace, beginSpace);
-		const auto range = endSpace - beginSpace;
-
-		result.replace(beginSpace, range, fill);
-
-		const auto newStart = beginSpace + fill.length();
-		beginSpace = result.find_first_of(whitespace, newStart);
-	}
-	return result;
-}
-
-std::string join(const std::vector<std::string>& vec, const char* delim)
-{
-	std::stringstream res;
-	copy(vec.begin(), vec.end(), std::ostream_iterator<std::string>(res, delim));
-	return res.str();
 }
 
 /*******************************************************************************

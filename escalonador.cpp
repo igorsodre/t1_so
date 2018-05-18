@@ -11,6 +11,7 @@ void run_runner(Config &config);
 
 /* 3) */
 void dummy_proc(int i);
+void dummy_proc2(int i);
 
 /* 4) */
 void build_process(Msg *msg, Config &config);
@@ -20,6 +21,9 @@ int get_new_delay(Config &config);
 
 /* 6) */
 void initialize_processes(Config &config);
+
+/* 7) */
+void run_process(Config &config, TProcess proc);
 
 int main()
 {
@@ -75,23 +79,33 @@ void run_scheduler(Config &config){
  * */
 void run_runner(Config &config){
 	config.attach_memmory(NOOP);
+
 	while(1){
 		P(sem);
-		if(!config.t_env->p2_queue.isEmpty()){
-			TProcess proc = config.t_env->p2_queue.pop();
-			cout << MAG << "Rodando proc: " << proc.id << ", file: " << string(proc.exec_file) << RESET << endl;
+		if(!config.t_env->pqueue[1].isEmpty()){ // round robin com fila 1 > fila 2 > fila 3
+			TProcess proc = config.t_env->pqueue[1].pop();
+			V(sem);
+			run_process(config, proc);
+		}else if(!config.t_env->pqueue[2].isEmpty()){
+			TProcess proc = config.t_env->pqueue[2].pop();
+			V(sem);
+			run_process(config, proc);
+		}else if(!config.t_env->pqueue[3].isEmpty()){
+			TProcess proc = config.t_env->pqueue[3].pop();
+			V(sem);
+			run_process(config, proc);
+		}else {
+			V(sem);
+			sleep(2); // se nenhuma fila tem processos, dorme um pouco
 		}
-		V(sem);
-		sleep(10);
 	}
-	config.detatch_memory();
 	exit(0);
 }
 
 /**
  * 3) procedimento dummy.
  * */
-void dummy_proc(int i){}
+void dummy_proc(int i){ i++;}
 
 /**
  * 4) monta um processo a partir da mensagem recebida
@@ -105,7 +119,6 @@ void build_process(Msg *msg, Config &config){
 		proc.when = msg->horario;
 		config.p_fila.push(proc);
 	}
-
 }
 
 /**
@@ -138,21 +151,82 @@ void initialize_processes(Config &config){
 		TProcess proc = config.p_fila.top();
 		P(sem);
 		display_proc(proc);
-		switch(proc.priority){
+		switch(proc.priority){ // seta o momento do fluxo circular de transito na filas de prioridade que o processo vai comecar
 			case 1:
-				config.t_env->p1_queue.insert(proc);
-				config.p_fila.pop();
+				proc.current_action = FILA_1_1;
 				break;
 			case 2:
-				config.t_env->p2_queue.insert(proc);
-				config.p_fila.pop();
+				proc.current_action = FILA_2_1;
 				break;
 			case 3:
-				config.t_env->p3_queue.insert(proc);
-				config.p_fila.pop();
+				proc.current_action = FILA_3_1;
 				break;
 		}
+		config.t_env->pqueue[proc.priority].insert(proc);
+		config.p_fila.pop();
 		V(sem);
 	}
 }
 
+/**
+ * 7) roda o processo ate que ele termine ou por 5 segundos
+ * se nao terminou deolve-o para uma das filas round robin
+ * */
+void run_process(Config &config, TProcess proc){
+	int v_pid;
+	int ret, v_wait, counter;
+	int what_queue[8] = {1, 1, 2, 2, 3, 3, 2, 2};
+
+	if(proc.active){ // se o processo esta ativo, so precisa continuar sua execucao
+		v_pid = proc.pid;
+		proc.current_action = (proc.current_action + 1) % STATES_SIZE;
+		counter = QUANTUM;
+		kill(v_pid, SIGCONT);
+		while(counter--){
+			sleep(1);
+			ret = waitpid(v_pid, &v_wait, WNOHANG);
+			if(ret > 0) break;
+		}
+		if(ret ==  0){
+			kill(v_pid, SIGSTOP); // para o processo
+			P(sem);
+			// recoloca o processo na fila correta
+			config.t_env->pqueue[what_queue[proc.current_action]].insert(proc);
+			V(sem);
+		} else { // se nao teve erro entao o processo encerrou
+			cout << GRN << "Processo: " << proc.id << " terminou execucao." << RESET << endl;
+			// TODO: procedimento de encerramento de processo
+		}
+	}
+	else { // se o processo nao esta ativo entao ele ainda nao foi criado
+		int v_pid = fork();
+		if(v_pid == 0){ // codigo para colocar o programa para executar
+			string right_path = "./" + string(proc.exec_file);
+			if(execl(right_path.c_str(), proc.exec_file, (char *) 0) < 0){
+				cout << "Nao foi possivel executar o arquivo: " << right_path << ", programa deve ser reagendado." << endl;
+				exit(0);
+			}
+		}
+		else{
+			proc.pid = v_pid;
+			proc.active = true; // marca o processo como rodando
+			proc.current_action = (proc.current_action + 1) % STATES_SIZE;
+			counter = QUANTUM;
+			while(counter--){
+				sleep(1);
+				ret = waitpid(v_pid, &v_wait, WNOHANG);
+				if(ret > 0) break;
+			}
+			if(ret == 0){
+				kill(v_pid, SIGSTOP); // para o processo
+				P(sem);
+				// recoloca o processo na fila correta
+				config.t_env->pqueue[what_queue[proc.current_action]].insert(proc);
+				V(sem);
+			} else { // se nao teve erro entao o processo encerrou
+				cout << GRN << "Processo: " << proc.id << " terminou execucao." << RESET << endl;
+				// TODO: procedimento de encerramento de processo
+			}
+		}
+	}
+}
