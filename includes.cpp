@@ -27,11 +27,15 @@
 #define SHARED_MEMORY_KEY 130114
 #define SEMAPHORE_KEY 1301145
 #define MSG_SIZE 100
-#define MAX_SIZE_QUEUE 21
+#define MAX_SIZE_QUEUE 36
 #define SUCCESS -42
 #define CREATE_ENV 1
 #define NOOP 0
 #define QUANTUM 5
+#define CREATE_PROC 1
+#define LISTA_PROC 2
+#define REMOVE_PROC 3
+#define SHUTDOWN 4
 
 /*estados do processo em relacao as filas que ele ira entrar*/
 #define STATES_SIZE 8
@@ -121,7 +125,7 @@ class PQueue
 /* estrutura utilizada para tranmissao das mensagens do solicitador para o executor*/
 typedef struct tm t_time;
 typedef struct t_mensagem {
-	long nothing;
+	long nothing = CREATE_PROC;
 	int copies;
 	t_time horario;
 	int priority;
@@ -172,12 +176,12 @@ class Config {
 		int pid_runner;
 		int mem_id; // indentificador da memoria compartilahda
 		TEnvironment *t_env;
+		TProcess current_running_process;
 		std::priority_queue<TProcess> p_fila; //fila de espera de processos ordenada por hora de execucao mais proxima
 		std::vector<TProcess> finished_processes;
 		Config(){}; //constructor
 
 		int initialize_config(){ //inicializa configuracoes iniciais
-			std::ios::sync_with_stdio(false);
 			if(id_fila < 0) return start_queue();
 			else return 1;
 		}
@@ -185,6 +189,7 @@ class Config {
 		int get_shared_memory(){ // aloca um segmento de memoria compartilhada
 			if( (mem_id = shmget(SHARED_MEMORY_KEY, sizeof(TEnvironment), IPC_CREAT|0666)) == -1) {
 				std::cout << RED << "Falha ao alocar memoria compartilhada" << RESET << std::endl;
+
 				return errno;
 			}
 			else return SUCCESS;
@@ -204,6 +209,7 @@ class Config {
 		}
 
 		void remove_shared_memory(){ // libera o segmento de memoria compartilhada alocado anteriormente
+			/*para remover no terminal = ipcrm -m ID*/
 			shmctl(mem_id, IPC_RMID, NULL);
 		}
 
@@ -217,6 +223,7 @@ class Config {
 		}
 
 		void destroy_queue(){ // libera a fila de mensagens
+			/* para remover no terminal = ipcrm -q ID*/
 			msgctl(id_fila, IPC_RMID, NULL);
 		}
 

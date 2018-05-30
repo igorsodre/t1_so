@@ -2,6 +2,7 @@
 using namespace std;
 /** variaveis globais **/
 int sem; // semaforo
+Config *dismiss;
 
 /* 1)*/
 void run_scheduler(Config &config);
@@ -25,9 +26,26 @@ void initialize_processes(Config &config);
 /* 7) */
 void run_process(Config &config, TProcess proc);
 
+/* 8) */
+void list_proc(Config &config);
+
+/* 9) */
+void display_proc(TProcess &proc);
+
+/* 10) */
+void remove_proc(Config &config, int proc_id);
+
+/* 11) */
+void shut_down_scheduler(Config config);
+
+/* 12) */
+void shut_down_runner(int i);
+
+/* 13) */
+void display_proc_run_information(Config *config);
+
 int main()
 {
-	int v_wait;
 	Config config;
 	config.initialize_config();
 	if(!(config.get_shared_memory() == SUCCESS)) return 0; //utilizada pra compartilhar o ambiente de escalonamento
@@ -36,9 +54,6 @@ int main()
 	if((config.pid_runner = fork()) == 0) run_runner(config);
 	else run_scheduler(config);
 
-	wait(&v_wait);
-	config.remove_shared_memory();
-	sem_delete(sem);
 	return 0;
 }
 
@@ -55,7 +70,21 @@ void run_scheduler(Config &config){
 		ret = config.pop_msg(&msg);
 		if(ret == SUCCESS){
 			alarm(0);
-			build_process(&msg, config); // cria os processos e os adiciona para fila de espera
+			switch(msg.nothing){
+				case CREATE_PROC:
+					build_process(&msg, config); // cria os processos e os adiciona para fila de espera
+					break;
+				case LISTA_PROC:
+					list_proc(config); // lista os processos da fila de espera
+					break;
+				case REMOVE_PROC:
+					remove_proc(config, msg.priority); // remove o processo passado como argumento
+					break;
+				case SHUTDOWN:
+					cout << "recebi um SHUTDOWN" << endl;
+					shut_down_scheduler(config); // encerra o programa
+					break;
+			}
 			delay = get_new_delay(config); // pega novo tempo de espera
 			alarm(delay);
 		}
@@ -79,6 +108,11 @@ void run_scheduler(Config &config){
  * */
 void run_runner(Config &config){
 	config.attach_memmory(NOOP);
+	dismiss = &config; // seta variavel global para rotina de encerramento
+	siginterrupt(SIGALRM, 1);
+	siginterrupt(SIGTERM, 1);
+	signal(SIGALRM, dummy_proc2);
+	signal(SIGTERM, shut_down_runner);
 
 	while(1){
 		P(sem);
@@ -106,6 +140,7 @@ void run_runner(Config &config){
  * 3) procedimento dummy.
  * */
 void dummy_proc(int i){ i++;}
+void dummy_proc2(int i){ i++; }
 
 /**
  * 4) monta um processo a partir da mensagem recebida
@@ -118,6 +153,7 @@ void build_process(Msg *msg, Config &config){
 		proc.priority = msg->priority;
 		proc.when = msg->horario;
 		config.p_fila.push(proc);
+		display_proc(proc);
 	}
 }
 
@@ -135,12 +171,15 @@ int get_new_delay(Config &config){
 	else return 0;
 }
 
+/**
+ * 9) mostra informacao do processo
+ * */
 void display_proc(TProcess &proc){
 	time_t now;
 	t_time *well;
 	time(&now);
 	well = localtime(&now);
-	cout << GRN << "Process: " << proc.id << ", file: " << string(proc.exec_file) << ", was put to run at: " << my_get_time(well) << RESET << endl;
+	cout << GRN << "ID: " << proc.id << "\t | arquivo executavel: " << string(proc.exec_file) << "\t| horario de execucao: " << my_get_time(&proc.when) << RESET << endl;
 }
 
 /**
@@ -150,7 +189,6 @@ void initialize_processes(Config &config){
 	if(config.p_fila.size() > 0){
 		TProcess proc = config.p_fila.top();
 		P(sem);
-		display_proc(proc);
 		switch(proc.priority){ // seta o momento do fluxo circular de transito na filas de prioridade que o processo vai comecar
 			case 1:
 				proc.current_action = FILA_1_1;
@@ -181,6 +219,7 @@ void run_process(Config &config, TProcess proc){
 		v_pid = proc.pid;
 		proc.current_action = (proc.current_action + 1) % STATES_SIZE;
 		counter = QUANTUM;
+		config.current_running_process = proc;
 		kill(v_pid, SIGCONT);
 		while(counter--){
 			sleep(1);
@@ -212,6 +251,7 @@ void run_process(Config &config, TProcess proc){
 			proc.active = true; // marca o processo como rodando
 			proc.current_action = (proc.current_action + 1) % STATES_SIZE;
 			counter = QUANTUM;
+			config.current_running_process = proc;
 			while(counter--){
 				sleep(1);
 				ret = waitpid(v_pid, &v_wait, WNOHANG);
@@ -229,4 +269,83 @@ void run_process(Config &config, TProcess proc){
 			}
 		}
 	}
+}
+
+/**
+ * 8) lista todos os processos que estao na fila de espera para serem executados
+ * */
+void list_proc(Config &config){
+	vector<TProcess> v;
+	TProcess proc;
+	cout << "\tjob_id\t\t| arq_exec\t\t|hh:mm\t\t|pri" << endl;
+	while(!config.p_fila.empty()){
+		proc = config.p_fila.top();
+		cout << "\t" << proc.id << "\t\t|" << string(proc.exec_file) << "\t\t\t|" << my_get_time(&proc.when) << "\t\t|" << proc.priority << endl;
+		v.push_back(proc);
+		config.p_fila.pop();
+	}
+	while(!v.empty()){
+		config.p_fila.push(v.back());
+		v.pop_back();
+	}
+}
+
+/**
+ * 10) remove o processo da fila de espera
+ * */
+void remove_proc(Config &config, int proc_id){
+	vector<TProcess> v;
+	TProcess proc;
+	while(!config.p_fila.empty()){
+		proc = config.p_fila.top();
+		if(proc.id != proc_id) v.push_back(proc); // nao insere no arrai o processo que quer remover
+		config.p_fila.pop();
+	}
+	while(!v.empty()){
+		config.p_fila.push(v.back());
+		v.pop_back();
+	}
+}
+
+/**
+ * 11) remove os macanismos IPC e encerra o programa
+ * */
+void shut_down_scheduler(Config config){
+	int v_wait;
+	kill(config.pid_runner, SIGTERM);
+	wait(&v_wait);
+	config.detatch_memory();
+	config.remove_shared_memory();
+	config.destroy_queue();
+	sem_delete(sem);
+	exit(0);
+}
+
+/**
+ * 12) rotina de encerramento do processo runner
+ * */
+void shut_down_runner(int i){
+	i++;
+	int v_wait, ret;
+	TProcess proc;
+	kill(dismiss->current_running_process.pid, SIGKILL);
+	for(int index = 1; index < 4; index++){ // mata todos os processos em todas as filas
+		while(dismiss->t_env->pqueue[index].isEmpty()){
+			proc = dismiss->t_env->pqueue[index].pop();
+			kill(proc.pid, SIGKILL);
+		}
+	}
+	while(1){ // da wait em todos os processos matados anteriormente
+		ret = wait(&v_wait);
+		if(ret == -1 && errno == ECHILD) break;
+	}
+	display_proc_run_information(dismiss);
+	dismiss->detatch_memory();
+	exit(0); // finaliza execucao
+}
+/**
+ * 13) mostra as informacoes de todos os procesos que foram efetivamente executados
+ * */
+void display_proc_run_information(Config *config){
+	cout << endl << "printei informacao dos processos" << endl;
 }
