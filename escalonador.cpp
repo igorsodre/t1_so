@@ -44,15 +44,26 @@ void shut_down_runner(int i);
 /* 13) */
 void display_proc_run_information(Config *config);
 
+/* 13 */
+void display_proc_not_executed(Config config);
+
 int main()
 {
 	Config config;
-	config.initialize_config();
-	if(!(config.get_shared_memory() == SUCCESS)) return 0; //utilizada pra compartilhar o ambiente de escalonamento
+	if(config.initialize_config() != SUCCESS) return 0; // se nao conseguir criar a fila de mensagens, encerra o programa
+	if(config.get_shared_memory() != SUCCESS) return 0; // utilizada pra compartilhar o ambiente de escalonamento, caso falhe encerra o programa
 	config.attach_memmory(CREATE_ENV);
+
 	if((sem = sem_create(SEMAPHORE_KEY, 1)) == -1) return 0; // pega o semaforo, caso falhe, encerra o programa
-	if((config.pid_runner = fork()) == 0) run_runner(config);
-	else run_scheduler(config);
+
+	if((config.pid_runner = fork()) == 0) run_runner(config); // roda o escalonador
+	else if(config.pid_runner > 0) run_scheduler(config); // roda o scheduler
+	else { // se nao deu certo o fork, destroy os macanismos ipc e encerra o programa
+		config.detatch_memory();
+		config.remove_shared_memory();
+		config.destroy_queue();
+		sem_delete(sem);
+	}
 
 	return 0;
 }
@@ -81,7 +92,6 @@ void run_scheduler(Config &config){
 					remove_proc(config, msg.priority); // remove o processo passado como argumento
 					break;
 				case SHUTDOWN:
-					cout << "recebi um SHUTDOWN" << endl;
 					shut_down_scheduler(config); // encerra o programa
 					break;
 			}
@@ -110,9 +120,9 @@ void run_runner(Config &config){
 	config.attach_memmory(NOOP);
 	dismiss = &config; // seta variavel global para rotina de encerramento
 	siginterrupt(SIGALRM, 1);
-	siginterrupt(SIGTERM, 1);
+	siginterrupt(SIGUSR1, 1);
 	signal(SIGALRM, dummy_proc2);
-	signal(SIGTERM, shut_down_runner);
+	signal(SIGUSR1, shut_down_runner);
 
 	while(1){
 		P(sem);
@@ -152,6 +162,7 @@ void build_process(Msg *msg, Config &config){
 		strcpy(proc.exec_file, msg->content);
 		proc.priority = msg->priority;
 		proc.when = msg->horario;
+		proc.submit = get_current_time();
 		config.p_fila.push(proc);
 		display_proc(proc);
 	}
@@ -233,8 +244,8 @@ void run_process(Config &config, TProcess proc){
 			config.t_env->pqueue[what_queue[proc.current_action]].insert(proc);
 			V(sem);
 		} else { // se nao teve erro entao o processo encerrou
-			cout << GRN << "Processo: " << proc.id << " terminou execucao." << RESET << endl;
-			// TODO: procedimento de encerramento de processo
+			proc.end = get_current_time();
+			config.finished_processes.push_back(proc);
 		}
 	}
 	else { // se o processo nao esta ativo entao ele ainda nao foi criado
@@ -249,6 +260,7 @@ void run_process(Config &config, TProcess proc){
 		else{
 			proc.pid = v_pid;
 			proc.active = true; // marca o processo como rodando
+			proc.start = get_current_time();
 			proc.current_action = (proc.current_action + 1) % STATES_SIZE;
 			counter = QUANTUM;
 			config.current_running_process = proc;
@@ -264,8 +276,8 @@ void run_process(Config &config, TProcess proc){
 				config.t_env->pqueue[what_queue[proc.current_action]].insert(proc);
 				V(sem);
 			} else { // se nao teve erro entao o processo encerrou
-				cout << GRN << "Processo: " << proc.id << " terminou execucao." << RESET << endl;
-				// TODO: procedimento de encerramento de processo
+				proc.end = get_current_time();
+				config.finished_processes.push_back(proc);
 			}
 		}
 	}
@@ -277,10 +289,10 @@ void run_process(Config &config, TProcess proc){
 void list_proc(Config &config){
 	vector<TProcess> v;
 	TProcess proc;
-	cout << "\tjob_id\t\t| arq_exec\t\t|hh:mm\t\t|pri" << endl;
+	cout << "\tjob_id\t\t| arq_exec\t|hh:mm\t\t|pri" << endl;
 	while(!config.p_fila.empty()){
 		proc = config.p_fila.top();
-		cout << "\t" << proc.id << "\t\t|" << string(proc.exec_file) << "\t\t\t|" << my_get_time(&proc.when) << "\t\t|" << proc.priority << endl;
+		cout << "\t" << proc.id << "\t\t|" << string(proc.exec_file) << "\t\t|" << my_get_time(&proc.when) << "\t\t|" << proc.priority << endl;
 		v.push_back(proc);
 		config.p_fila.pop();
 	}
@@ -312,12 +324,14 @@ void remove_proc(Config &config, int proc_id){
  * */
 void shut_down_scheduler(Config config){
 	int v_wait;
-	kill(config.pid_runner, SIGTERM);
+	kill(config.pid_runner, SIGUSR1);
 	wait(&v_wait);
+	display_proc_not_executed(config);
 	config.detatch_memory();
 	config.remove_shared_memory();
 	config.destroy_queue();
 	sem_delete(sem);
+	cout << CYN << endl << "================== Escalonador encerrado ==================" << endl;
 	exit(0);
 }
 
@@ -328,16 +342,16 @@ void shut_down_runner(int i){
 	i++;
 	int v_wait, ret;
 	TProcess proc;
-	kill(dismiss->current_running_process.pid, SIGKILL);
+	if(dismiss->current_running_process.active) kill(dismiss->current_running_process.pid, SIGKILL); // mata o processo que o escalonador etá rodando
 	for(int index = 1; index < 4; index++){ // mata todos os processos em todas as filas
-		while(dismiss->t_env->pqueue[index].isEmpty()){
+		while(!dismiss->t_env->pqueue[index].isEmpty()){
 			proc = dismiss->t_env->pqueue[index].pop();
-			kill(proc.pid, SIGKILL);
+			if(proc.active) kill(proc.pid, SIGKILL);
 		}
 	}
 	while(1){ // da wait em todos os processos matados anteriormente
 		ret = wait(&v_wait);
-		if(ret == -1 && errno == ECHILD) break;
+		if(ret < 0 && errno == ECHILD) break;
 	}
 	display_proc_run_information(dismiss);
 	dismiss->detatch_memory();
@@ -347,5 +361,31 @@ void shut_down_runner(int i){
  * 13) mostra as informacoes de todos os procesos que foram efetivamente executados
  * */
 void display_proc_run_information(Config *config){
-	cout << endl << "printei informacao dos processos" << endl;
+	if(!config->finished_processes.empty()){
+		TProcess proc;
+		cout << "Os seguintes precessos terminaram sua execucao com sucesso:" << endl;
+		cout << "\tjob_id\t\t| arq_exec\t| hora de submisao\t| hora de inicio da execucao\t| hora de termino de execucao" << endl;
+		for(auto &proc : config->finished_processes){
+			cout << "\t" << proc.id << "\t\t| " << string(proc.exec_file);
+			cout << "\t\t| " << my_get_time(&proc.submit);
+			cout << "\t\t\t| " << my_get_time(&proc.start);
+			cout << "\t\t| " << my_get_time(&proc.end) << endl;
+		}
+	} else cout << "Nenhum processo teve sua execucao finalizada." << endl;
+}
+
+/**
+ * 13) mostra informacoes dos processos que nao sairam da fila de espera
+ * */
+void display_proc_not_executed(Config config){
+	if(!config.p_fila.empty()){
+		cout << "Os seguintes precessos nao foram colocados para execucao:" << endl;
+		cout << "\tjob_id\t\t| arq_exec" << endl;
+		TProcess proc;
+		while(!config.p_fila.empty()){
+			proc = config.p_fila.top();
+			cout << "\t" << proc.id << "\t\t| " << string(proc.exec_file) << endl;
+			config.p_fila.pop();
+		}
+	}
 }

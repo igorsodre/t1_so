@@ -145,10 +145,10 @@ class TProcess {
 		short current_action;
 		bool active = false;
 		int pid;
-		t_time when;
-		t_time start;
-		t_time end;
-		t_time submit;
+		t_time when; // horario marcado para executar
+		t_time submit; // horario em que foi solicitada a execucao
+		t_time start; // horario de inicio efetivo
+		t_time end; // horario de termino
 };
 /* definindo o operador < (menor que) para utiilizacao da fila de prioridade */
 bool operator<(TProcess a, TProcess b){
@@ -167,7 +167,7 @@ class TEnvironment {
 };
 
 /**
- * estrutura de controle programas,
+ * estrutura de controle dos programas,
  * utilizada para unificar valores e procedimentos utilizados por todos os processos
  * */
 class Config {
@@ -178,18 +178,17 @@ class Config {
 		TEnvironment *t_env;
 		TProcess current_running_process;
 		std::priority_queue<TProcess> p_fila; //fila de espera de processos ordenada por hora de execucao mais proxima
-		std::vector<TProcess> finished_processes;
+		std::vector<TProcess> finished_processes; // processos que ja terminaram de rodar
 		Config(){}; //constructor
 
 		int initialize_config(){ //inicializa configuracoes iniciais
 			if(id_fila < 0) return start_queue();
-			else return 1;
+			else return SUCCESS;
 		}
 
 		int get_shared_memory(){ // aloca um segmento de memoria compartilhada
 			if( (mem_id = shmget(SHARED_MEMORY_KEY, sizeof(TEnvironment), IPC_CREAT|0666)) == -1) {
 				std::cout << RED << "Falha ao alocar memoria compartilhada" << RESET << std::endl;
-
 				return errno;
 			}
 			else return SUCCESS;
@@ -210,21 +209,27 @@ class Config {
 
 		void remove_shared_memory(){ // libera o segmento de memoria compartilhada alocado anteriormente
 			/*para remover no terminal = ipcrm -m ID*/
-			shmctl(mem_id, IPC_RMID, NULL);
+			if(shmctl(mem_id, IPC_RMID, NULL) < 0 ) {
+				std::cout << RED << "Memoria compartilhada nao excluida." << RESET << std::endl;
+				std::cout << std::string(strerror(errno)) << std::endl;
+			}
 		}
 
 		int start_queue(){ // cria uma fila de mensagem
 			this->id_fila = msgget(MESG_QUEUE_KEY, IPC_CREAT|0666);
 			if(id_fila < 0) {
 				std::cout << RED << "Falha ao criar fila de mensagem" << RESET << std::endl;
-				return 0;
+				return errno;
 			}
-			return 1;
+			return SUCCESS;
 		}
 
 		void destroy_queue(){ // libera a fila de mensagens
 			/* para remover no terminal = ipcrm -q ID*/
-			msgctl(id_fila, IPC_RMID, NULL);
+			if(msgctl(id_fila, IPC_RMID, NULL) < 0) {
+				std::cout << RED << "Fila de mensagens nao excluida." << RESET << std::endl;
+				std::cout << std::string(strerror(errno)) << std::endl;
+			}
 		}
 
 		int get_queue(){ // retorna o id da fila de mensagens
@@ -243,9 +248,6 @@ class Config {
 				return SUCCESS;
 			}
 		}
-
-		/* void f_teste(int display){ // nome autoexplicativo, qualquer codigo para procedimento de teste eh colocado aqui */
-		/* } */
 };
 
 // mostra o conteudo da estrutura de mensagens
@@ -259,6 +261,14 @@ std::string my_get_time(t_time *horario){
 	return retorno;
 }
 
+/* retorna a hora corrente no formato da struct tm*/
+t_time get_current_time(){
+	time_t now;
+	t_time now2;
+	time(&now);
+	now2 = *localtime(&now);
+	return now2;
+}
 // verifica se o valor passado esta contido no vetor passado
 bool in_array(const std::string &value, const std::vector<std::string> &array)
 {
@@ -317,11 +327,11 @@ int sem_create(key_t key, int initval)
 		ushort array[1] ;
 	} arg_ctl ;
 
-	semid = semget(ftok("includes.cpp",key),1,IPC_CREAT|IPC_EXCL|0666) ;
+	semid = semget(ftok("includes.cpp", key), 1, IPC_CREAT|IPC_EXCL|0666) ;
 	if (semid == -1) {
-		semid = semget(ftok("includes.cpp",key),1,0666) ;
+		semid = semget(ftok("includes.cpp", key), 1, 0666) ;
 		if (semid == -1) {
-			perror("Erro semget()") ;
+			perror("Erro semget()");
 			return -1;
 		}
 	}
@@ -358,7 +368,7 @@ void V(int semid)
 /* 0) */
 void sem_delete(int semid)
 {
-	if (semctl(semid,0,IPC_RMID,0) == -1)
+	if (semctl(semid, 0, IPC_RMID, 0) == -1)
 		perror("Erro na destruicao do semaforo");
 }
 #endif

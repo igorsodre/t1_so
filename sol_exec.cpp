@@ -102,8 +102,8 @@ t_time get_interval(string str){
 	when = *localtime(&now); // pega o horario atual
 
 	// adiciona o delay ao horario atual
-	when.tm_hour += horas;
-	when.tm_min += minutos;
+	when.tm_hour += (horas + (minutos / 60));
+	when.tm_min += (minutos % 60);
 
 	return when;
 }

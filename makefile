@@ -21,7 +21,7 @@ compila_testes: prog1.c prog2.c
 	g++ prog1.c -o prog1 && g++ prog2.c -o prog2
 
 exec:
-	./solicita_execucao 00:00 3 1 prog1 && ./solicita_execucao 00:00 1 prog2 && ./solicita_execucao 00:00 2 2 prog2
+	./solicita_execucao 00:01 2 1 prog1 && ./solicita_execucao 00:00 5 2 prog2 && ./solicita_execucao 00:01 2 2 prog2
 	# ./solicita_execucao 00:00 1 1 prog1
 lista:
 	./lista_postergados

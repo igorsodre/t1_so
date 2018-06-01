@@ -2,22 +2,24 @@
 #include <unistd.h>
 #include <time.h>
 #define endl std::endl
+
+void dummy(int i){
+	i++;
+	std::cout << endl;
+	std::cout << "\n\n\n===================== Terminei de executar pid: " << getpid() <<" ============================\n\n\n";
+	exit(0);
+}
+
 int main()
 {
 	srand(time(NULL));
-	int times = (rand() % 36) + 40;
+	int times = (rand() % 10) + 5;
 	std::cout << "executarei prog2 por: " << times << " sobre 2 segundos \n";
-	for (int i = 0; i < times; ++i)
+	signal(SIGALRM, dummy);
+	alarm(times);
+	while(1)
 	{
-			std::cout << "Nao estou carregando: " << i << "\r" << std::flush;
-			int milisec = 500; // length of time to sleep, in miliseconds
-			struct timespec req = {0};
-			req.tv_sec = 0;
-			req.tv_nsec = milisec * 1000000L;
-			nanosleep(&req, (struct timespec *)NULL);
 	}
-	std::cout << endl;
-	std::cout << "\n\n\n===================== Terminei de executar ============================\n\n\n";
 	return 0;
 }
 
