@@ -70,7 +70,7 @@ int main()
 
 /**
  * 1) trata as solicitacoes que chegarem na fila de mensagens,
- * e quando chegar o momento de serem executadas, avisa o runner
+ * e quando chegar o momento de serem executadas, coloca na fila de execucao correta
  * */
 void run_scheduler(Config &config){
 	Msg msg;
@@ -79,8 +79,8 @@ void run_scheduler(Config &config){
 	int delay;
 	while(1){
 		ret = config.pop_msg(&msg);
+		alarm(0);
 		if(ret == SUCCESS){
-			alarm(0);
 			switch(msg.nothing){
 				case CREATE_PROC:
 					build_process(&msg, config); // cria os processos e os adiciona para fila de espera
@@ -95,21 +95,15 @@ void run_scheduler(Config &config){
 					shut_down_scheduler(config); // encerra o programa
 					break;
 			}
-			delay = get_new_delay(config); // pega novo tempo de espera
-			alarm(delay);
 		}
 		else if(ret == EINTR){ // caso for erro de interrupcao, entao o alarme foi disparado
-			alarm(0);
 			initialize_processes(config); // muda o processo de esperando para ready
-			delay = get_new_delay(config); // pega novo tempo de espera
-			alarm(delay);
 		}
 		else{
-			alarm(0);
 			cout << RED << "interrupcao desconhecida, possivel perda de mensagem" << RESET << endl;
-			delay = get_new_delay(config); // pega novo tempo de espera
-			alarm(delay);
 		}
+		delay = get_new_delay(config); // pega novo tempo de espera
+		alarm(delay);
 	}
 }
 
@@ -140,7 +134,7 @@ void run_runner(Config &config){
 			run_process(config, proc);
 		}else {
 			V(sem);
-			sleep(2); // se nenhuma fila tem processos, dorme um pouco
+			sleep(1); // se nenhuma fila tem processos, dorme um pouco
 		}
 	}
 	exit(0);
@@ -186,11 +180,8 @@ int get_new_delay(Config &config){
  * 9) mostra informacao do processo
  * */
 void display_proc(TProcess &proc){
-	time_t now;
-	t_time *well;
-	time(&now);
-	well = localtime(&now);
-	cout << GRN << "ID: " << proc.id << "\t | arquivo executavel: " << string(proc.exec_file) << "\t| horario de execucao: " << my_get_time(&proc.when) << RESET << endl;
+	cout << GRN << "ID: " << proc.id << "\t | arquivo executavel: " << string(proc.exec_file)
+		<< "\t| horario de execucao: " << my_get_time(&proc.when) << RESET << endl;
 }
 
 /**
@@ -199,7 +190,6 @@ void display_proc(TProcess &proc){
 void initialize_processes(Config &config){
 	if(config.p_fila.size() > 0){
 		TProcess proc = config.p_fila.top();
-		P(sem);
 		switch(proc.priority){ // seta o momento do fluxo circular de transito na filas de prioridade que o processo vai comecar
 			case 1:
 				proc.current_action = FILA_1_1;
@@ -211,9 +201,10 @@ void initialize_processes(Config &config){
 				proc.current_action = FILA_3_1;
 				break;
 		}
+		P(sem);
 		config.t_env->pqueue[proc.priority].insert(proc);
-		config.p_fila.pop();
 		V(sem);
+		config.p_fila.pop();
 	}
 }
 
@@ -223,21 +214,17 @@ void initialize_processes(Config &config){
  * */
 void run_process(Config &config, TProcess proc){
 	int v_pid;
-	int ret, v_wait, counter;
+	int ret, v_wait;
 	int what_queue[8] = {1, 1, 2, 2, 3, 3, 2, 2};
 
 	if(proc.active){ // se o processo esta ativo, so precisa continuar sua execucao
 		v_pid = proc.pid;
 		proc.current_action = (proc.current_action + 1) % STATES_SIZE;
-		counter = QUANTUM;
 		config.current_running_process = proc;
 		kill(v_pid, SIGCONT);
-		while(counter--){
-			sleep(1);
-			ret = waitpid(v_pid, &v_wait, WNOHANG);
-			if(ret > 0) break;
-		}
-		if(ret ==  0){
+		alarm(QUANTUM);
+		ret = waitpid(v_pid, &v_wait, 0);
+		if(ret < 0 && errno == EINTR){
 			kill(v_pid, SIGSTOP); // para o processo
 			P(sem);
 			// recoloca o processo na fila correta
@@ -262,14 +249,10 @@ void run_process(Config &config, TProcess proc){
 			proc.active = true; // marca o processo como rodando
 			proc.start = get_current_time();
 			proc.current_action = (proc.current_action + 1) % STATES_SIZE;
-			counter = QUANTUM;
 			config.current_running_process = proc;
-			while(counter--){
-				sleep(1);
-				ret = waitpid(v_pid, &v_wait, WNOHANG);
-				if(ret > 0) break;
-			}
-			if(ret == 0){
+			alarm(QUANTUM);
+			ret = waitpid(v_pid, &v_wait, 0);
+			if(ret < 0 && errno == EINTR){
 				kill(v_pid, SIGSTOP); // para o processo
 				P(sem);
 				// recoloca o processo na fila correta
@@ -310,7 +293,7 @@ void remove_proc(Config &config, int proc_id){
 	TProcess proc;
 	while(!config.p_fila.empty()){
 		proc = config.p_fila.top();
-		if(proc.id != proc_id) v.push_back(proc); // nao insere no arrai o processo que quer remover
+		if(proc.id != proc_id) v.push_back(proc); // nao insere no array o processo que quer remover
 		config.p_fila.pop();
 	}
 	while(!v.empty()){

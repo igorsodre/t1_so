@@ -5,6 +5,7 @@ int main(int argc, char *argv[])
 {
 	if(argc != 2 || !is_number(string(argv[1]))){
 		cout << "Argumentos invalidos, tente novamente." << endl;
+		return 0;
 	}
 
 	Config config;
